@@ -4,6 +4,12 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 
+// For testing - clear localStorage to force Welcome page to show
+// Remove this in production
+localStorage.removeItem('aiTutorHasVisited');
+localStorage.removeItem('aiTutorUserData');
+console.log('Cleared localStorage for testing Welcome page');
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
