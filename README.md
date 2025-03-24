@@ -1,70 +1,216 @@
-# Getting Started with Create React App
+# AI Tutor API
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+An intelligent tutoring system powered by Google's Gemini 2.0 Flash model. This application provides interactive learning assistance across various subjects with a conversational interface.
 
-## Available Scripts
+## Deployment on Render
 
-In the project directory, you can run:
+This application is designed to be easily deployed on Render.com. Follow these steps:
 
-### `npm start`
+1. Fork or clone this repository to your GitHub account
+2. Create a new Web Service on Render and connect your GitHub repository
+3. Use the following settings:
+   - **Environment**: Node
+   - **Build Command**: `npm install && npm run build`
+   - **Start Command**: `npm start`
+4. Add the environment variables:
+   - `GEMINI_API_KEY`: Your Google Gemini API key
+   - `PORT`: This will be set automatically by Render
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## API Integration Documentation
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+### Base URL
 
-### `npm test`
+```
+https://your-render-app-name.onrender.com/api
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+### Endpoints
 
-### `npm run build`
+#### 1. Get AI Tutor Response
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+```
+POST /tutor/chat
+```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+Request a response from the AI Tutor.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+**Request Body**:
 
-### `npm run eject`
+```json
+{
+  "apiKey": "your_gemini_api_key", // Optional, will use server's default if not provided
+  "userData": {
+    "username": "John", // Optional
+    "subject": "Mathematics" // Optional
+  },
+  "messages": [ // Previous conversation messages (optional)
+    {
+      "role": "user",
+      "content": "Hello, can you help me with math?"
+    },
+    {
+      "role": "assistant",
+      "content": "Hi John! I'd be happy to help with mathematics questions."
+    }
+  ],
+  "userInput": "How do I solve a quadratic equation?"
+}
+```
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+**Response**:
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+```json
+{
+  "response": "To solve a quadratic equation ax² + bx + c = 0, you can use the quadratic formula...",
+  "conversationId": "abcd1234efgh5678",
+  "timestamp": "2023-06-01T12:34:56.789Z"
+}
+```
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+**Error Response**:
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+```json
+{
+  "error": "Error message details"
+}
+```
 
-## Learn More
+#### 2. Get Available Subjects
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+```
+GET /tutor/subjects
+```
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+Retrieve a list of supported subjects and starter questions.
 
-### Code Splitting
+**Response**:
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+```json
+{
+  "subjects": ["Programming", "Mathematics", "Science", "History", "Language Learning", "Economics", "Philosophy", "Art"],
+  "subjectStarters": {
+    "Programming": [
+      "How do I create a responsive website?",
+      "What's the difference between JavaScript and Python?",
+      "Can you explain Object-Oriented Programming concepts?"
+    ],
+    "Mathematics": [
+      "How do I solve quadratic equations?",
+      "Can you explain calculus derivatives?",
+      "What are complex numbers used for?"
+    ],
+    // Other subjects...
+  }
+}
+```
 
-### Analyzing the Bundle Size
+#### 3. Health Check
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+```
+GET /health
+```
 
-### Making a Progressive Web App
+Check if the API is running correctly.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+**Response**:
 
-### Advanced Configuration
+```json
+{
+  "status": "OK",
+  "version": "1.0.0"
+}
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+## Example Integration (React)
 
-### Deployment
+```javascript
+import axios from 'axios';
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+const API_URL = 'https://your-render-app-name.onrender.com/api';
 
-### `npm run build` fails to minify
+// Function to get a response from the AI Tutor
+async function getTutorResponse(question, conversationHistory = [], userData = {}) {
+  try {
+    const response = await axios.post(`${API_URL}/tutor/chat`, {
+      userInput: question,
+      messages: conversationHistory,
+      userData
+    });
+    
+    return response.data;
+  } catch (error) {
+    console.error('Error getting tutor response:', error);
+    throw error;
+  }
+}
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+// Example usage
+const ChatComponent = () => {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  
+  const handleSendMessage = async () => {
+    if (!input.trim()) return;
+    
+    // Add user message
+    const newMessages = [...messages, { role: 'user', content: input }];
+    setMessages(newMessages);
+    setInput('');
+    
+    try {
+      // Get AI response
+      const tutorResponse = await getTutorResponse(input, messages, {
+        username: 'John',
+        subject: 'Mathematics'
+      });
+      
+      // Add AI response to chat
+      setMessages([...newMessages, { 
+        role: 'assistant', 
+        content: tutorResponse.response 
+      }]);
+    } catch (error) {
+      // Handle error
+      setMessages([...newMessages, { 
+        role: 'assistant', 
+        content: 'Sorry, I encountered an error.' 
+      }]);
+    }
+  };
+  
+  // Component JSX...
+};
+```
+
+## Local Development
+
+1. Clone the repository:
+   ```
+   git clone https://github.com/yourusername/ai-tutor.git
+   cd ai-tutor
+   ```
+
+2. Install dependencies:
+   ```
+   npm install
+   ```
+
+3. Create a `.env` file with your configuration:
+   ```
+   PORT=3001
+   GEMINI_API_KEY=your_gemini_api_key
+   ```
+
+4. Start the development server:
+   ```
+   npm run server
+   ```
+
+5. In a separate terminal, start the React frontend:
+   ```
+   npm run dev
+   ```
+
+## License
+
+MIT

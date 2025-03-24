@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import "./AiTutorStyles.css";
+import { fetchTutorResponse, formatResponse, formatError, createWelcomeMessage } from "../api";
 
 // YouTube link validator helper function
+// eslint-disable-next-line no-unused-vars
 const isValidYouTubeUrl = (url) => {
     try {
         const urlObj = new URL(url);
@@ -17,6 +19,7 @@ const isValidYouTubeUrl = (url) => {
 };
 
 // Check if YouTube video exists (using thumbnail method)
+// eslint-disable-next-line no-unused-vars
 const checkYouTubeVideo = async (url) => {
     try {
         // Extract video ID
@@ -60,110 +63,163 @@ const checkYouTubeVideo = async (url) => {
     }
 };
 
-const AiTutor = ({ customApiKey, userData }) => {
+const AiTutor = ({ customApiKey, userData, onReturnToWelcome }) => {
     const [messages, setMessages] = useState([]);
-    const [input, setInput] = useState("");
-    const [typing, setTyping] = useState(false);
+    const [isTyping, setIsTyping] = useState(false);
     const [isListening, setIsListening] = useState(false);
-    const chatHistoryRef = useRef(null);
+    const [input, setInput] = useState('');
+    const [hasApiKeyError, setHasApiKeyError] = useState(false);
+    const messagesEndRef = useRef(null);
+    const inputRef = useRef(null);
+    const apiKey = customApiKey || window.GEMINI_API_KEY || process.env.REACT_APP_GEMINI_API_KEY || '';
+    const { username, subject } = userData || { username: '', subject: '' };
 
-    // Auto-scroll to bottom when messages update
+    // For debugging
     useEffect(() => {
-        if (chatHistoryRef.current) {
-            chatHistoryRef.current.scrollTop = chatHistoryRef.current.scrollHeight;
-        }
-    }, [messages]);
+        console.log("API Key available:", apiKey ? "Yes (length: " + apiKey.length + ")" : "No");
+    }, [apiKey]);
 
-    // Generate personalized welcome message when component mounts
-    useEffect(() => {
-        const generateWelcomeMessage = () => {
-            let greeting = "Welcome to AI Tutor!";
-            
-            if (userData?.username) {
-                greeting = `Welcome, ${userData.username}! I'm your AI Tutor.`;
-            }
-            
-            let welcomeText = `${greeting} Ask me any question, and I'll provide detailed explanations along with recommended videos and resources.`;
-            
-            if (userData?.subject) {
-                welcomeText += ` I see you're interested in ${userData.subject}. Feel free to ask me anything about that topic!`;
-                
-                // Suggest a starter question based on the subject
-                const subjectQuestions = {
-                    "Programming": "Try asking: \"What are the fundamental concepts of object-oriented programming?\"",
-                    "Mathematics": "Try asking: \"Can you explain the quadratic formula and its applications?\"",
-                    "Science": "Try asking: \"How do black holes form and what happens inside them?\"",
-                    "History": "Try asking: \"What were the major causes of World War II?\"",
-                    "Language Learning": "Try asking: \"What are effective strategies for learning a new language?\"",
-                    "Economics": "Try asking: \"Can you explain supply and demand with real-world examples?\"",
-                    "Philosophy": "Try asking: \"What is existentialism and who are its key philosophers?\"",
-                    "Art": "Try asking: \"What are the major movements in modern art?\""
-                };
-                
-                if (subjectQuestions[userData.subject]) {
-                    welcomeText += `\n\n${subjectQuestions[userData.subject]}`;
-                }
-            }
-            
-            return {
-                text: welcomeText,
-                sender: "ai"
-            };
-        };
-        
-        if (messages.length === 0) {
-            setMessages([generateWelcomeMessage()]);
-        }
-    }, [userData, messages.length]);
-
-    // Use custom API key if provided, otherwise use the one from .env
-    const API_KEY = customApiKey || process.env.REACT_APP_GEMINI_API_KEY;
-    console.log("📌 API Key:", API_KEY ? "Available" : "Not available");
-
-    // Fetch YouTube tags from Tags Generator API
-    const fetchYouTubeTags = async (query) => {
-        try {
-            const myHeaders = new Headers();
-            myHeaders.append("x-apihub-key", "9BtW5vLytugJ0hv0yE3iSse05NgBj8zU47mcfbN1ag3LrslfiC");
-            myHeaders.append("x-apihub-host", "Tags-Generator.allthingsdev.co");
-            myHeaders.append("x-apihub-endpoint", "1e66a9a3-1925-47aa-bcb7-6f84486a96c9");
-
-            const requestOptions = {
-                method: "POST",
-                headers: myHeaders,
-                redirect: "follow"
-            };
-
-            const apiUrl = `https://Tags-Generator.proxy-production.allthingsdev.co/youtubeTags?title=${encodeURIComponent(query)}`;
-            console.log("Fetching tags from:", apiUrl);
-            
-            const response = await fetch(apiUrl, requestOptions);
-            const result = await response.text();
-            console.log("Raw tag response:", result);
-            
-            let data;
-            try {
-                data = JSON.parse(result);
-            } catch (e) {
-                console.error("Failed to parse JSON response:", e);
-                return [];
-            }
-            
-            console.log("Parsed YouTube Tags Response:", data);
-            
-            // Handle different response formats
-            const tags = data?.data?.tags || 
-                         data?.tags || 
-                         data?.results?.tags || 
-                         [];
-                         
-            return tags.slice(0, 5); // Return top 5 tags
-        } catch (error) {
-            console.error('Tag API Error:', error);
-            return [];
-        }
+    // Generate subject-specific starter questions
+    const subjectStarters = {
+        'Programming': [
+            'How do I create a responsive website?',
+            'What\'s the difference between JavaScript and Python?',
+            'Can you explain Object-Oriented Programming concepts?'
+        ],
+        'Mathematics': [
+            'How do I solve quadratic equations?',
+            'Can you explain calculus derivatives?',
+            'What are complex numbers used for?'
+        ],
+        'Science': [
+            'How does photosynthesis work?',
+            'Explain quantum physics in simple terms',
+            'What is the structure of DNA?'
+        ],
+        'History': [
+            'What caused World War I?',
+            'Tell me about the Renaissance period',
+            'How did ancient civilizations impact modern society?'
+        ],
+        'Language Learning': [
+            'What\'s the most effective way to learn vocabulary?',
+            'How can I improve my pronunciation?',
+            'What are some common grammar mistakes to avoid?'
+        ],
+        'Economics': [
+            'Explain supply and demand',
+            'What causes inflation?',
+            'How do stock markets work?'
+        ],
+        'Philosophy': [
+            'What is existentialism?',
+            'Explain Plato\'s Theory of Forms',
+            'How does ethics differ from morality?'
+        ],
+        'Art': [
+            'What are the key art movements in history?',
+            'How do I analyze a painting?',
+            'What techniques do artists use to create depth?'
+        ],
+        'default': [
+            'What topics would you like to learn about?',
+            'Do you have any homework questions?',
+            'How can I help with your studies today?'
+        ]
     };
 
+    // Create personalized welcome message
+    useEffect(() => {
+        let welcomeContent;
+        
+        // Check if API key exists
+        if (!apiKey) {
+            setHasApiKeyError(true);
+            welcomeContent = formatError('You\'re using AI Tutor without an API key. This is a limited mode that provides basic information without AI-powered responses.\n\nTo get full AI functionality, you can go back to the Welcome page and add your Google Gemini API key.');
+        } else {
+            setHasApiKeyError(false);
+            welcomeContent = createWelcomeMessage(username, subject, subjectStarters);
+        }
+        
+        setMessages([{ 
+            role: 'assistant',
+            content: welcomeContent
+        }]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [userData, apiKey]);
+    
+    // Auto-scroll to bottom when messages update
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages]);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!input.trim()) return;
+        
+        // Add user message to chat
+        const userMessage = { role: 'user', content: input };
+        setMessages(prev => [...prev, userMessage]);
+        setInput('');
+        setIsTyping(true);
+        
+        try {
+            // Check if API key exists
+            if (!apiKey) {
+                setTimeout(() => {
+                    const errorContent = formatError('No API key provided. This is a limited demo mode without AI responses. To get real AI-powered answers, please add an API key.');
+                    setMessages(prev => [...prev, { 
+                        role: 'assistant', 
+                        content: errorContent
+                    }]);
+                    setIsTyping(false);
+                }, 1000);
+                return;
+            }
+            
+            // Use our API client to fetch the response
+            const responseText = await fetchTutorResponse(
+                apiKey, 
+                userData, 
+                messages.map(msg => ({
+                    role: msg.role,
+                    content: msg.content.replace(/<[^>]*>/g, '') // Strip HTML tags for API
+                })), 
+                input
+            );
+            
+            // Format the response and add it to messages
+            const formattedResponse = formatResponse(responseText);
+            setMessages(prev => [...prev, { 
+                role: 'assistant', 
+                content: formattedResponse 
+            }]);
+            
+        } catch (error) {
+            console.error('Error fetching response:', error);
+            
+            let errorMessage = 'Sorry, I encountered an error processing your request.';
+            
+            if (error.message.includes('API key') || error.message.includes('401')) {
+                errorMessage = 'API key validation failed. Please click the "Go Back" button to return to the Welcome page and add a valid Google Gemini API key.';
+                setHasApiKeyError(true);
+            } else if (error.message.includes('429')) {
+                errorMessage = 'Rate limit exceeded. Please try again after a few minutes or use a different API key.';
+            } else if (error.message.includes('quota')) {
+                errorMessage = 'You have exceeded your current quota. Please check your plan and billing details.';
+            }
+            
+            const formattedErrorMessage = formatError(errorMessage);
+            
+            setMessages(prev => [...prev, { 
+                role: 'assistant', 
+                content: formattedErrorMessage
+            }]);
+        } finally {
+            setIsTyping(false);
+        }
+    };
+    
     // Speech Recognition Setup
     let recognition;
     if ("webkitSpeechRecognition" in window) {
@@ -184,6 +240,7 @@ const AiTutor = ({ customApiKey, userData }) => {
     }
 
     // Start Speech-to-Text Listening
+    // eslint-disable-next-line no-unused-vars
     const startListening = () => {
         if (!recognition) {
             alert("Speech recognition is not supported in this browser.");
@@ -197,204 +254,8 @@ const AiTutor = ({ customApiKey, userData }) => {
         }
     };
 
-    // Send Message to Gemini API
-    const sendMessage = async () => {
-        if (!input.trim()) return;
-        
-        setTyping(true);
-        const userMessage = input;
-        setInput("");
-        
-        try {
-            if (!API_KEY) {
-                throw new Error("API key not found - check .env file");
-            }
-
-            const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`,
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        contents: [{
-                            parts: [{
-                                text: `${userData?.username ? `[User's name: ${userData.username}]` : ''}
-                                ${userData?.subject ? `[User is interested in: ${userData.subject}]` : ''}
-                                
-                                Respond to: ${userMessage}\n\n
-                                Requirements:\n
-                                1. Provide detailed answer (3-5 paragraphs)\n
-                                2. Suggest 3 REAL YouTube videos using STRICT format:\n
-                                VIDEO_START
-                                Title: "Complete Tutorial Title - EXACTLY as it appears on YouTube"
-                                URL: https://www.youtube.com/watch?v=VIDEOID
-                                Reason: "Relevance explanation in one sentence"
-                                VIDEO_END
-                                Rules:
-                                - ONLY suggest videos that actually exist on YouTube with EXACT titles
-                                - ONLY use real video IDs from existing YouTube videos
-                                - ONLY videos from major educational channels like Khan Academy, Coursera, edX, MIT OpenCourseWare, freeCodeCamp, Crash Course, TED-Ed, etc.
-                                - URLs must have real video IDs (not placeholders like ABCD1234)
-                                - DO NOT make up or invent video links
-                                - Published within last 3 years
-                                - Duration under 20 minutes
-                                - No markdown formatting
-                                ${userData?.subject ? `- Focus on ${userData.subject} content since user is interested in this subject` : ''}`
-                            }]
-                        }]
-                    }),
-                }
-            );
-    
-            console.log("Response Status:", response.status);
-            const data = await response.json();
-            
-            if (!response.ok) {
-                throw new Error(data.error?.message || `HTTP error! status: ${response.status}`);
-            }
-
-            if (!data.candidates?.[0]?.content?.parts) {
-                throw new Error('Invalid response structure from API');
-            }
-
-            const fullResponse = data.candidates[0].content.parts[0].text;
-            
-            // Extract main text and video suggestions
-            let mainText = fullResponse;
-            let videoSuggestions = '';
-            
-            // Get YouTube search tags from Tags Generator API first
-            const tags = await fetchYouTubeTags(userMessage);
-            console.log("Fetched YouTube tags:", tags);
-            
-            // Format tags with better styling
-            const tagLinks = tags.length > 0
-                ? `<div class="youtube-tags-wrapper">
-                     ${tags.map(tag =>
-                        `<a href="https://www.youtube.com/results?search_query=${encodeURIComponent(tag)}" 
-                          class="youtube-tag" 
-                          target="_blank" 
-                          rel="noopener noreferrer">${tag}</a>`
-                      ).join('')}
-                   </div>`
-                : '<em>No tags found for this query</em>';
-            
-            // Extract video suggestions if they exist
-            const videoMatches = fullResponse.match(/VIDEO_START[\s\S]*?VIDEO_END/g);
-            
-            if (videoMatches) {
-                // Parse all videos
-                const parsedVideos = videoMatches.map(video => {
-                    const title = video.match(/Title: "(.*?)"/)?.[1] || 'Untitled Video';
-                    const url = video.match(/URL: (.*?)(\n|$)/)?.[1]?.trim() || '';
-                    const reason = video.match(/Reason: "(.*?)"/)?.[1] || 'No description provided';
-                    return { title, url, reason };
-                });
-                
-                // Add parsed videos to mainText for now (will be updated after validation)
-                videoSuggestions = parsedVideos.map(video => 
-                    `\n• <div class="video-recommendation">
-                        <div class="video-thumbnail">
-                            <a href="${video.url}" target="_blank" rel="noopener noreferrer">
-                                ${getYouTubeThumbnail(video.url)}
-                            </a>
-                        </div>
-                        <div class="video-details">
-                            <a href="${video.url}" 
-                               class="video-title" 
-                               target="_blank" 
-                               rel="noopener noreferrer">${video.title}</a>
-                            <div class="video-reason">${video.reason}</div>
-                        </div>
-                     </div>`
-                ).join('\n');
-                
-                // Remove video sections from main text
-                mainText = fullResponse.replace(/VIDEO_START[\s\S]*?VIDEO_END/g, '').trim();
-                
-                // Validate videos in background after response is shown
-                setTimeout(async () => {
-                    let validVideos = [];
-                    for (const video of parsedVideos) {
-                        if (isValidYouTubeUrl(video.url)) {
-                            const exists = await checkYouTubeVideo(video.url);
-                            if (exists) {
-                                validVideos.push(video);
-                            }
-                        }
-                    }
-                    
-                    if (validVideos.length > 0) {
-                        // Update messages with only valid videos
-                        const updatedVideoSection = validVideos.map(video => 
-                            `\n• <div class="video-recommendation">
-                                <div class="video-thumbnail">
-                                    <a href="${video.url}" target="_blank" rel="noopener noreferrer">
-                                        ${getYouTubeThumbnail(video.url)}
-                                    </a>
-                                </div>
-                                <div class="video-details">
-                                    <a href="${video.url}" 
-                                       class="video-title" 
-                                       target="_blank" 
-                                       rel="noopener noreferrer">${video.title}</a>
-                                    <div class="video-reason">${video.reason}</div>
-                                </div>
-                             </div>`
-                        ).join('\n');
-                        
-                        setMessages(prevMessages => {
-                            const updatedMessages = [...prevMessages];
-                            const lastMessage = updatedMessages[updatedMessages.length - 1];
-                            
-                            // Replace the entire video section with only valid videos
-                            const baseText = mainText.replace(/\*\*/g, '');
-                            lastMessage.text = `${baseText}\n\n<div class="section-header">📝 Related YouTube Tags</div><div class="youtube-tags-container">${tagLinks}</div>${updatedVideoSection ? '\n\n<div class="section-header">🎥 Recommended Videos</div>' + updatedVideoSection : '\n\n<div class="section-header">🎥 Recommended Videos</div><div class="no-videos-message">No working videos found. Try searching with the tags above.</div>'}`;
-                            
-                            return updatedMessages;
-                        });
-                    } else {
-                        // No valid videos found, update message to indicate this
-                        setMessages(prevMessages => {
-                            const updatedMessages = [...prevMessages];
-                            const lastMessage = updatedMessages[updatedMessages.length - 1];
-                            
-                            const baseText = mainText.replace(/\*\*/g, '');
-                            lastMessage.text = `${baseText}\n\n<div class="section-header">📝 Related YouTube Tags</div><div class="youtube-tags-container">${tagLinks}</div>\n\n<div class="section-header">🎥 Recommended Videos</div><div class="no-videos-message">No working videos found. Try searching with the tags above.</div>`;
-                            
-                            return updatedMessages;
-                        });
-                    }
-                }, 100);
-            }
-
-            const aiResponse = {
-                text: `${mainText.replace(/\*\*/g, '')}\n\n<div class="section-header">📝 Related YouTube Tags</div><div class="youtube-tags-container">${tagLinks}</div>${videoSuggestions ? '\n\n<div class="section-header">🎥 Recommended Videos</div>' + videoSuggestions : '\n\n<div class="section-header">🎥 Recommended Videos</div><div class="no-videos-message">No video recommendations found for this topic. Try searching YouTube with the tags above.</div>'}`,
-                sender: "ai"
-            };
-            
-            setMessages((prevMessages) => [...prevMessages, aiResponse]);
-        } catch (error) {
-            console.error("Chat Error:", error);
-            let errorMessage = "🚨 An unexpected error occurred";
-            
-            if (error.message.includes('quota')) {
-                errorMessage = "⚠️ API quota exceeded - try again later";
-            } else if (error.message.includes('API key')) {
-                errorMessage = "🔑 Invalid API key - check .env file";
-            } else if (error.message.includes('network')) {
-                errorMessage = "🌐 Network error - check your connection";
-            } else if (error.message.includes('HTTP error')) {
-                errorMessage = `⚠️ Server error (${error.message.match(/\d+/)?.[0] || 'unknown'})`;
-            }
-                
-            setMessages(prev => [...prev, { text: errorMessage, sender: "ai" }]);
-        } finally {
-            setTyping(false);
-        }
-    };
-    
     // Helper function to extract YouTube video ID and generate thumbnail HTML
+    // eslint-disable-next-line no-unused-vars
     const getYouTubeThumbnail = (url) => {
         try {
             let videoId = '';
@@ -412,96 +273,154 @@ const AiTutor = ({ customApiKey, userData }) => {
         }
     };
 
+    const handleVoiceInput = () => {
+        // Check if the Web Speech API is available
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            alert('Voice input is not supported in your browser. Try Chrome or Edge.');
+            return;
+        }
+        
+        // If already listening, stop
+        if (isListening) {
+            setIsListening(false);
+            return;
+        }
+        
+        try {
+            // Initialize speech recognition
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            
+            recognition.lang = 'en-US';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            
+            recognition.onstart = () => {
+                setIsListening(true);
+                setInput('Listening...');
+            };
+            
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                setInput(transcript);
+            };
+            
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error', event);
+                setIsListening(false);
+                setInput('');
+            };
+            
+            recognition.onend = () => {
+                setIsListening(false);
+            };
+            
+            recognition.start();
+        } catch (error) {
+            console.error('Failed to start speech recognition:', error);
+            setIsListening(false);
+        }
+    };
+
+    // Helper function to format response with better structure
+    const formatResponse = (text) => {
+        if (!text) return '';
+        
+        // Format code blocks
+        let formattedText = text.replace(
+            /```([a-zA-Z]*)\n([\s\S]*?)\n```/g, 
+            '<div class="code-block"><div class="code-header">$1</div><pre><code>$2</code></pre></div>'
+        );
+        
+        // Format bullet points
+        formattedText = formattedText.replace(
+            /^\s*[-*•]\s+(.*?)$/gm,
+            '<div class="bullet-point">• $1</div>'
+        );
+        
+        // Format numbered lists
+        formattedText = formattedText.replace(
+            /^\s*(\d+)\.\s+(.*?)$/gm,
+            '<div class="numbered-item"><span class="number">$1.</span> $2</div>'
+        );
+        
+        // Format headings
+        formattedText = formattedText.replace(
+            /^#+\s+(.*?)$/gm,
+            '<div class="response-heading">$1</div>'
+        );
+        
+        // Replace newlines with <br> for proper line breaks
+        formattedText = formattedText.replace(/\n/g, '<br />');
+        
+        return formattedText;
+    };
+
     return (
         <div className="ai-tutor-container">
-            <div className="header">
-                <div className="ai-avatar">
-                    <div className="ai-status-indicator" />
-                    <span>🤖</span>
+            <div className="chat-header">
+                <div className="chat-header-title">
+                    <div className="ai-icon">🤖</div>
+                    <h1>AI Tutor</h1>
                 </div>
-                <h2>AI Tutor Assistant</h2>
-                <div className="connection-status">
-                    {API_KEY ? '🔗 Connected' : '⚠️ Disconnected'}
+                <div className="chat-header-controls">
+                    {hasApiKeyError && (
+                        <button 
+                            className="settings-button" 
+                            onClick={onReturnToWelcome}
+                            title="Return to welcome page to fix API key"
+                        >
+                            ⚙️ Settings
+                        </button>
+                    )}
                 </div>
             </div>
-            
-            <div className="chat-history" ref={chatHistoryRef}>
-                {messages.length === 0 && (
-                    <div className="welcome-message">
-                        <h3>👋 Welcome to AI Tutor!</h3>
-                        <p>Ask me anything about programming, math, science, or any topic you're learning.</p>
-                        <p>I can help explain concepts and suggest helpful YouTube resources.</p>
-                    </div>
-                )}
-                {messages.map((msg, index) => (
-                    <div
-                        key={index}
-                        className={`message ${msg.sender}-message`}
-                        style={{ animation: `slideIn 0.3s ease ${index * 0.05}s both` }}
-                    >
-                        <div className="message-header">
-                            <span className="sender">
-                                {msg.sender === 'ai' ? 'AI Tutor' : 'You'}
-                            </span>
-                            <span className="timestamp">
-                                {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                        </div>
-                        <div
-                            className="message-content"
-                            dangerouslySetInnerHTML={{
-                                __html: msg.text
-                                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                                    .replace(/\n/g, '<br/>')
-                                    .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-                                    .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-                            }}
+
+            <div className="chat-messages">
+                {messages.map((message, index) => (
+                    <div key={index} className={`message ${message.role}`}>
+                        <div 
+                            className="message-content" 
+                            dangerouslySetInnerHTML={{ __html: message.content }}
                         />
                     </div>
                 ))}
-                {typing && (
-                    <div className="typing-indicator">
-                        <div className="dot-flashing" />
-                        <span>Analyzing your question...</span>
+                {isTyping && (
+                    <div className="message assistant">
+                        <div className="typing-indicator">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
                     </div>
                 )}
+                <div ref={messagesEndRef} />
             </div>
 
-            <div className="input-container">
-                <div className="input-wrapper">
-                    <input
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        placeholder="Ask me anything..."
-                        onKeyPress={(e) => e.key === 'Enter' && !typing && sendMessage()}
-                    />
-                    <div className="button-group">
-                        <button
-                            onClick={sendMessage}
-                            className={`send-button ${typing ? 'loading' : ''}`}
-                            disabled={typing}
-                        >
-                            <span className="button-text">
-                                {typing ? 'Processing...' : 'Send'}
-                            </span>
-                            <span className="send-arrow">➤</span>
-                        </button>
-                        <button
-                            onClick={startListening}
-                            className={`mic-button ${isListening ? 'active' : ''}`}
-                            title="Voice input"
-                        >
-                            {isListening ? (
-                                <div className="pulsating-mic">🎙️</div>
-                            ) : (
-                                '🎤'
-                            )}
-                        </button>
-                    </div>
-                </div>
-                <div className="disclaimer">
-                    Powered by Gemini Flash • {userData?.username ? `Hello, ${userData.username}` : 'Responses may vary'} • v1.5.0
-                </div>
+            <form className="input-area" onSubmit={handleSubmit}>
+                <input
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="Ask anything..."
+                    ref={inputRef}
+                    disabled={isListening}
+                />
+                <button 
+                    type="button" 
+                    className={`voice-input-button ${isListening ? 'listening' : ''}`}
+                    onClick={handleVoiceInput}
+                >
+                    {isListening ? '🎙️' : '🎤'}
+                </button>
+                <button type="submit" disabled={!input.trim() && !isListening}>
+                    Send
+                </button>
+            </form>
+
+            <div className="disclaimer">
+                <p>{username ? `${username}, please` : 'Please'} note: AI responses may not always be accurate. Verify important information with other sources.</p>
+                <div className="powered-by">Powered by Gemini 2.0 Flash</div>
             </div>
         </div>
     );

@@ -1,71 +1,86 @@
 import React, { useState, useEffect } from 'react';
+import './App.css';
 import AiTutor from './components/AiTutor';
 import Welcome from './components/Welcome';
 
 function App() {
-  // Force showWelcome to true for testing
   const [showWelcome, setShowWelcome] = useState(true);
-  const [apiKey, setApiKey] = useState(process.env.REACT_APP_GEMINI_API_KEY || '');
   const [userData, setUserData] = useState({
+    apiKey: 'AIzaSyD19g_oIOlr4k6CLNVgXuH6qYBR1amgQ-E', // Google Gemini API key
     username: '',
     subject: ''
   });
-  
-  // Comment out the localStorage check temporarily to force Welcome page to show
-  /*
+
   useEffect(() => {
+    // Clear localStorage for testing
+    // localStorage.removeItem('aiTutorHasVisited');
+    // localStorage.removeItem('aiTutorUserData');
+    
+    console.log("Checking localStorage for previous visit");
     const hasVisited = localStorage.getItem('aiTutorHasVisited');
     const savedUserData = localStorage.getItem('aiTutorUserData');
     
-    if (hasVisited) {
-      setShowWelcome(false);
-    }
+    console.log("hasVisited:", hasVisited);
+    console.log("savedUserData:", savedUserData);
     
-    if (savedUserData) {
+    if (hasVisited === 'true' && savedUserData) {
       try {
-        setUserData(JSON.parse(savedUserData));
-      } catch (e) {
-        console.error('Error parsing saved user data:', e);
+        const parsedUserData = JSON.parse(savedUserData);
+        setUserData(parsedUserData);
+        setShowWelcome(false);
+        console.log("User has visited before, showing AI Tutor");
+      } catch (error) {
+        console.error('Error parsing saved user data:', error);
+        setShowWelcome(true);
+        console.log("Error parsing user data, showing Welcome");
       }
-    }
-  }, []);
-  */
-  
-  const handleStart = (key, username, subject) => {
-    // If no key is provided, use the environment variable
-    if (key) {
-      setApiKey(key);
-      localStorage.setItem('REACT_APP_GEMINI_API_KEY', key);
+    } else {
+      setShowWelcome(true);
+      console.log("First-time visitor, showing Welcome");
     }
     
-    // Save user data
-    const newUserData = {
-      username: username || userData.username,
-      subject: subject || userData.subject
+  }, []);
+
+  const handleStart = (apiKey, username, subject) => {
+    const newUserData = { 
+      apiKey: apiKey || userData.apiKey, // Use provided API key or default
+      username, 
+      subject 
     };
     
+    console.log("handleStart called with:", { apiKey: apiKey ? "API key provided" : "No API key", username, subject });
+    
+    // Save to state
     setUserData(newUserData);
+    
+    // Save to localStorage
+    localStorage.setItem('aiTutorHasVisited', 'true');
     localStorage.setItem('aiTutorUserData', JSON.stringify(newUserData));
     
-    // Set the visited flag in localStorage
-    localStorage.setItem('aiTutorHasVisited', 'true');
+    // Switch to AI Tutor
     setShowWelcome(false);
   };
-  
-  console.log("Rendering App component, showWelcome:", showWelcome);
-  
+
+  const handleReturnToWelcome = () => {
+    // Return to the welcome page (used if API key is missing or invalid)
+    setShowWelcome(true);
+  };
+
+  console.log("Rendering App, showWelcome:", showWelcome);
+
   return (
-    <div className="App">
+    <div className="app-container">
       {showWelcome ? (
         <Welcome 
           onStart={handleStart} 
-          savedUsername={userData.username}
+          savedUsername={userData.username} 
           savedSubject={userData.subject}
         />
       ) : (
         <AiTutor 
-          customApiKey={apiKey} 
+          customApiKey={userData.apiKey} 
           userData={userData}
+          onReturnToWelcome={handleReturnToWelcome}
         />
       )}
     </div>

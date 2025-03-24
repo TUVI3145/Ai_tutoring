@@ -4,11 +4,16 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 
-// For testing - clear localStorage to force Welcome page to show
-// Remove this in production
+// Clear localStorage for testing
 localStorage.removeItem('aiTutorHasVisited');
 localStorage.removeItem('aiTutorUserData');
-console.log('Cleared localStorage for testing Welcome page');
+console.log('localStorage cleared for testing');
+
+// Set the API key globally (Google Gemini API key)
+window.GEMINI_API_KEY = 'AIzaSyD19g_oIOlr4k6CLNVgXuH6qYBR1amgQ-E';
+
+// For debugging - log environment variables
+console.log('Google Gemini API key is set globally (length: ' + window.GEMINI_API_KEY.length + ')');
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
